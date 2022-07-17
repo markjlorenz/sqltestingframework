@@ -52,7 +52,7 @@ do
           :'filename' AS filename,
           actual.value AS actual,
           expect.value AS expect,
-          (actual.value = expect.value) AS did_pass,
+          (actual.value IS NOT DISTINCT FROM expect.value) AS did_pass,
           text.value AS text
         FROM actual
         FULL JOIN expect ON 1 = 1
