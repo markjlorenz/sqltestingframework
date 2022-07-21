@@ -8,7 +8,7 @@ RUN_ID=`date +"%s" | tr -d "\n"`
 
 docker run -it --rm \
   --env PGPASSWORD="$PG_PASSWORD" \
-  --volume "$PWD":/work \
+  --volume "$PWD":/work:ro \
   --workdir /work \
   --env PGOPTIONS="--client-min-messages=warning" \
   postgres psql \
@@ -26,7 +26,8 @@ do
 
   docker run -it --rm \
     --env PGPASSWORD="$PG_PASSWORD" \
-	  --volume "$PWD":/work \
+	  --volume "$PWD":/work:ro \
+	  --volume "$PWD/../":/queries:ro \
 	  --workdir /work \
     --env PGOPTIONS="--client-min-messages=warning" \
     postgres psql \
@@ -66,7 +67,7 @@ echo ""
 
 docker run -it --rm \
   --env PGPASSWORD="$PG_PASSWORD" \
-  --volume "$PWD":/work \
+  --volume "$PWD":/work:ro \
   --workdir /work \
   --env PGOPTIONS="--client-min-messages=warning" \
   --env PSQL_PAGER="./config/output_format.sh" \
