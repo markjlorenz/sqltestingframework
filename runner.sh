@@ -60,6 +60,19 @@ do
         FULL JOIN text   ON 1 = 1
         ;
       " \
+      --variable setup_test="
+        \\set query_variable \`cat :query\`
+        \\; -- to force a new line
+        BEGIN;
+        CREATE TEMP TABLE :\"query\" ON COMMIT DROP
+          AS :query_variable
+        ;
+      " \
+      --variable cleanup_test="
+        \\unset query_variable \\;
+        \\unset query \\;
+        COMMIT;
+      " \
       -f "$test_file"
 done
 
