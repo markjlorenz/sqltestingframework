@@ -12,8 +12,7 @@ tput civis
 # If a filename is provided, run only that file in the test
 # suite, if no filename is provided, then run all the files
 # in the current directory
-[ $# -ge 1 -a -f "$1" ] && FILE_GLOB="$1" || FILE_GLOB="./*.sql"
-FILE_COUNT=$(ls -1q $FILE_GLOB | wc -l)
+[ $# -ge 1 ] && FILE_GLOB="$@" || FILE_GLOB="./*.sql"
 
 # This is reused across test runs, and created if it does not exist.
 RESULTS_TABLE_NAME="tmp_test_results"
@@ -40,8 +39,7 @@ do
 done
 echo -en "\r"
 
-for test_file in $FILE_GLOB
-do
+for test_file in $FILE_GLOB; do
   # Fill in dots as the test files run
   echo -n " ●"
 
