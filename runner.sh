@@ -2,6 +2,19 @@
 
 set -e
 
+# Hide the cursor while the program is running
+function cleanup() {
+    tput cnorm
+}
+trap cleanup EXIT
+tput civis
+
+# If a filename is provided, run only that file in the test
+# suite, if no filename is provided, then run all the files
+# in the current directory
+[ $# -ge 1 -a -f "$1" ] && FILE_GLOB="$1" || FILE_GLOB="./*.sql"
+FILE_COUNT=$(ls -1q $FILE_GLOB | wc -l)
+
 # This is reused across test runs, and created if it does not exist.
 RESULTS_TABLE_NAME="tmp_test_results"
 RUN_ID=`date +"%s" | tr -d "\n"`
@@ -20,9 +33,17 @@ docker run -it --rm \
     --variable results_table_name="$RESULTS_TABLE_NAME" \
     -f "./config/setup.sql"
 
-for test_file in ./*.sql
+# Draw an empty circle for each test file that willl run
+for i in $FILE_GLOB
 do
-  echo -n "."
+  echo -n " ◦"
+done
+echo -en "\r"
+
+for test_file in $FILE_GLOB
+do
+  # Fill in dots as the test files run
+  echo -n " ●"
 
   docker run -it --rm \
     --env PGPASSWORD="$PG_PASSWORD" \
