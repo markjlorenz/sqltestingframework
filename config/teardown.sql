@@ -11,9 +11,14 @@ SELECT
     ELSE
       expect
    END AS expect
-  ,did_pass
+  ,CASE
+    WHEN TRUE = ALL(precheck) THEN
+      did_pass::text
+    ELSE
+      'f-pre'
+   END AS did_pass
   ,text
-FROM :results_table_name
+FROM :schema_name.:results_table_name
 WHERE run_id=:run_id
 ORDER BY filename
 ;

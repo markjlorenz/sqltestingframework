@@ -15,7 +15,9 @@ tput civis
 [ $# -ge 1 ] && FILE_GLOB="$@" || FILE_GLOB="./*.sql"
 
 # This is reused across test runs, and created if it does not exist.
-RESULTS_TABLE_NAME="tmp_test_results"
+SCHEMA_NAME="stf"
+RESULTS_TABLE_NAME="test_results"
+PRECHECK_TABLE_NAME="prechecks"
 RUN_ID=`date +"%s" | tr -d "\n"`
 
 docker run -it --rm \
@@ -29,7 +31,9 @@ docker run -it --rm \
     -U postgres \
     --quiet \
     --variable ON_ERROR_STOP="1" \
+    --variable schema_name="$SCHEMA_NAME" \
     --variable results_table_name="$RESULTS_TABLE_NAME" \
+    --variable prechecks="$PRECHECK_TABLE_NAME" \
     -f "./config/setup.sql"
 
 # Draw an empty circle for each test file that willl run
@@ -55,36 +59,60 @@ for test_file in $FILE_GLOB; do
       -U postgres \
       --quiet \
       --variable ON_ERROR_STOP="1" \
+      --variable schema_name="$SCHEMA_NAME" \
       --variable results_table_name="$RESULTS_TABLE_NAME" \
+      --variable prechecks="$PRECHECK_TABLE_NAME" \
       --variable run_id="$RUN_ID" \
       --variable filename="$test_file" \
-      --variable evaluate_test="
-        INSERT INTO :results_table_name (
-          run_id,
-          filename,
-          actual,
-          expect,
-          did_pass,
-          text
-        )
-        SELECT
-          :run_id AS run_id,
-          :'filename' AS filename,
-          actual.value AS actual,
-          expect.value AS expect,
-          (actual.value IS NOT DISTINCT FROM expect.value) AS did_pass,
-          text.value AS text
-        FROM actual
-        FULL JOIN expect ON 1 = 1
-        FULL JOIN text   ON 1 = 1
-        ;
-      " \
       --variable setup_test="
         \\set query_variable \`cat :query\`
         \\; -- to force a new line
         BEGIN;
-        CREATE TEMP TABLE :\"query\" ON COMMIT DROP
+        CREATE TEMP TABLE :\"query\"
+          ON COMMIT DROP
           AS :query_variable
+        ;
+        CREATE TEMP TABLE prechecks (value BOOLEAN)
+          ON COMMIT DROP
+        ;
+      " \
+      --variable evaluate_test="
+        INSERT INTO :schema_name.:results_table_name (
+           run_id
+          ,filename
+          ,actual
+          ,expect
+          ,did_pass
+          ,text
+        )
+        SELECT
+          :run_id AS run_id
+          ,:'filename' AS filename
+          ,actual.value AS actual
+          ,expect.value AS expect
+          ,actual.value IS NOT DISTINCT FROM expect.value AS did_pass
+          ,text.value AS text
+        FROM actual
+        FULL JOIN expect    ON 1 = 1
+        FULL JOIN text      ON 1 = 1
+        ;
+
+        WITH latest_test_run AS (
+          SELECT * FROM :schema_name.:results_table_name
+          ORDER BY id DESC
+          LIMIT 1
+        ), aggregated_prechecks AS (
+          SELECT
+             latest_test_run.id AS id
+             ,ARRAY_REMOVE(ARRAY_AGG(prechecks.value), NULL) AS value
+          FROM latest_test_run
+          FULL JOIN :\"prechecks\" ON 1 = 1
+          GROUP BY latest_test_run.id
+        )
+        UPDATE :schema_name.:results_table_name
+        SET precheck = aggregated_prechecks.value
+        FROM aggregated_prechecks
+        WHERE aggregated_prechecks.id = :schema_name.:results_table_name.id
         ;
       " \
       --variable cleanup_test="
@@ -110,6 +138,8 @@ docker run -it --rm \
     --quiet \
     --pset="pager=always" \
     --variable ON_ERROR_STOP="1" \
+    --variable schema_name="$SCHEMA_NAME" \
     --variable results_table_name="$RESULTS_TABLE_NAME" \
+    --variable prechecks="$PRECHECK_TABLE_NAME" \
     --variable run_id="$RUN_ID" \
     -f "./config/teardown.sql"
