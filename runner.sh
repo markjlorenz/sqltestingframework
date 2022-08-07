@@ -72,7 +72,7 @@ for test_file in $FILE_GLOB; do
           ON COMMIT DROP
           AS :query_variable
         ;
-        CREATE TEMP TABLE prechecks (value BOOLEAN)
+        CREATE TEMP TABLE :\"prechecks\" (value BOOLEAN)
           ON COMMIT DROP
         ;
       " \
@@ -86,7 +86,7 @@ for test_file in $FILE_GLOB; do
           ,text
         )
         SELECT
-          :run_id AS run_id
+           :run_id AS run_id
           ,:'filename' AS filename
           ,actual.value AS actual
           ,expect.value AS expect
@@ -97,6 +97,8 @@ for test_file in $FILE_GLOB; do
         FULL JOIN text      ON 1 = 1
         ;
 
+        CREATE TEMP TABLE IF NOT EXISTS :\"prechecks\" (value BOOLEAN)
+        ;
         WITH latest_test_run AS (
           SELECT * FROM :schema_name.:results_table_name
           ORDER BY id DESC
