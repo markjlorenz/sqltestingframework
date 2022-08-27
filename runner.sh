@@ -19,6 +19,7 @@ SCHEMA_NAME="stf"
 RESULTS_TABLE_NAME="test_results"
 PRECHECK_TABLE_NAME="prechecks"
 RUN_ID=`date +"%s" | tr -d "\n"`
+MAD_MAX_DEVIATIONS=6
 
 docker run -it --rm \
   --env PGPASSWORD="$PG_PASSWORD" \
@@ -64,17 +65,43 @@ for test_file in $FILE_GLOB; do
       --variable prechecks="$PRECHECK_TABLE_NAME" \
       --variable run_id="$RUN_ID" \
       --variable filename="$test_file" \
+      --variable mad_max_deviations="$MAD_MAX_DEVIATIONS" \
       --variable setup_test="
-        \\set query_variable \`cat :query\`
-        \\; -- to force a new line
         BEGIN;
-        CREATE TEMP TABLE :\"query\"
-          ON COMMIT DROP
-          AS :query_variable
-        ;
+        \\if :{?query}
+          \\set query_variable \`cat :query\`
+          \\; -- to force a new line
+          CREATE TEMP TABLE :\"query\"
+            ON COMMIT DROP
+            AS :query_variable
+          ;
+        \\endif
+        \\; -- to force a new line
         CREATE TEMP TABLE :\"prechecks\" (value BOOLEAN)
           ON COMMIT DROP
         ;
+      " \
+      --variable get_mad_max="
+        SELECT
+           median
+          ,mad
+          ,mad * :mad_max_deviations + median AS max
+        FROM (
+          SELECT
+            PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY median_deviation) AS mad
+            ,MAX(median) AS median
+          FROM (
+            SELECT
+               ABS(:mad_max_col - median.value) AS median_deviation
+              ,median.value AS median
+            FROM :mad_max_tbl
+            FULL JOIN (
+              SELECT
+                PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY :mad_max_col) AS value
+              FROM :mad_max_tbl
+            ) median ON TRUE
+          ) median_deviations
+        ) calcs
       " \
       --variable evaluate_test="
         INSERT INTO :schema_name.:results_table_name (
@@ -93,8 +120,8 @@ for test_file in $FILE_GLOB; do
           ,actual.value IS NOT DISTINCT FROM expect.value AS did_pass
           ,text.value AS text
         FROM actual
-        FULL JOIN expect    ON 1 = 1
-        FULL JOIN text      ON 1 = 1
+        FULL JOIN expect    ON TRUE
+        FULL JOIN text      ON TRUE
         ;
 
         CREATE TEMP TABLE IF NOT EXISTS :\"prechecks\" (value BOOLEAN)
@@ -108,7 +135,7 @@ for test_file in $FILE_GLOB; do
              latest_test_run.id AS id
              ,ARRAY_REMOVE(ARRAY_AGG(prechecks.value), NULL) AS value
           FROM latest_test_run
-          FULL JOIN :\"prechecks\" ON 1 = 1
+          FULL JOIN :\"prechecks\" ON TRUE
           GROUP BY latest_test_run.id
         )
         UPDATE :schema_name.:results_table_name
