@@ -15,11 +15,15 @@ tput civis
 [ $# -ge 1 ] && FILE_GLOB="$@" || FILE_GLOB="./*.sql"
 
 # This is reused across test runs, and created if it does not exist.
-SCHEMA_NAME="stf"
-RESULTS_TABLE_NAME="test_results"
-PRECHECK_TABLE_NAME="prechecks"
+# these can be overridden by assigning in `./runner.sh`s environment e.g.:
+#   export STF_ECHO=queries
+SCHEMA_NAME=${SCHEMA_NAME:-"stf"}
+RESULTS_TABLE_NAME=${RESULTS_TABLE_NAME:-"test_results"}
+PRECHECK_TABLE_NAME=${PRECHECK_TABLE_NAME:-"prechecks"}
+MAD_MAX_DEVIATIONS=${MAD_MAX_DEVIATIONS:-"6"}
+STF_ECHO=${STF_ECHO:-"none"} # none | errors | queries | all
+
 RUN_ID=`date +"%s" | tr -d "\n"`
-MAD_MAX_DEVIATIONS=6
 
 docker run -it --rm \
   --env PGPASSWORD="$PG_PASSWORD" \
@@ -59,6 +63,7 @@ for test_file in $FILE_GLOB; do
       -p "$PG_PORT" \
       -U postgres \
       --quiet \
+      --variable ECHO="$STF_ECHO" \
       --variable ON_ERROR_STOP="1" \
       --variable schema_name="$SCHEMA_NAME" \
       --variable results_table_name="$RESULTS_TABLE_NAME" \
@@ -69,14 +74,12 @@ for test_file in $FILE_GLOB; do
       --variable setup_test="
         BEGIN;
         \\if :{?query}
-          \\set query_variable \`cat :query\`
-          \\; -- to force a new line
+          \\set query_variable \`cat :query\` \\\\
           CREATE TEMP TABLE :\"query\"
             ON COMMIT DROP
             AS :query_variable
           ;
-        \\endif
-        \\; -- to force a new line
+        \\endif \\\\
         CREATE TEMP TABLE :\"prechecks\" (value BOOLEAN)
           ON COMMIT DROP
         ;
@@ -145,8 +148,8 @@ for test_file in $FILE_GLOB; do
         ;
       " \
       --variable cleanup_test="
-        \\unset query_variable \\;
-        \\unset query \\;
+        \\unset query_variable \\\\
+        \\unset query \\\\
         COMMIT;
       " \
       -f "$test_file"
